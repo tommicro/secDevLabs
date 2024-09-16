@@ -4,13 +4,18 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
+	"os"
+	
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/globocom/secDevLabs/owasp-top10-2017-apps/a5/ecommerce-api/app/db"
 	"github.com/globocom/secDevLabs/owasp-top10-2017-apps/a5/ecommerce-api/app/pass"
 	"github.com/globocom/secDevLabs/owasp-top10-2017-apps/a5/ecommerce-api/app/types"
 	"github.com/google/uuid"
 	"github.com/labstack/echo"
+)
+
+var (
+	segredo = []byte(os.Getenv("SEGREDO"))
 )
 
 // WriteCookie writes a cookie into echo Context
@@ -31,6 +36,29 @@ func ReadCookie(c echo.Context) error {
 	fmt.Println(cookie.Name)
 	fmt.Println(cookie.Value)
 	return c.String(http.StatusOK, "")
+}
+
+func GetCurrentUser(c echo.Context) (string, error) {
+	cookie, err := c.Cookie("sessionIDa5")
+	if err != nil {
+		return "", err
+	}
+
+	token, err := jwt.Parse(cookie.Value, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+		}
+		return segredo, nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return claims["name"].(string), nil
+	} else {
+		return "", fmt.Errorf("Invalid token")
+	}
 }
 
 // Login checks MongoDB if this user exists and then returns a JWT session cookie.
@@ -67,10 +95,12 @@ func Login(c echo.Context) error {
 	// Set claims
 	claims := token.Claims.(jwt.MapClaims)
 	claims["name"] = userDataResult.Username
+	claims["uid"] = userDataResult.UserID
 	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
 
 	// Generate encoded token and send it as response.
-	t, err := token.SignedString([]byte("secret"))
+	//t, err := token.SignedString([]byte("secret"))
+	t, err := token.SignedString(segredo)
 	if err != nil {
 		return err
 	}
